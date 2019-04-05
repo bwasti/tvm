@@ -266,6 +266,7 @@ install(TARGETS tvm_runtime DESTINATION lib${LIB_SUFFIX})
 install(TARGETS nnvm_compiler DESTINATION lib${LIB_SUFFIX})
 
 if (INSTALL_DEV)
+  message(STATUS "Installing compiler infra headers")
   install(
     DIRECTORY "include/." DESTINATION "include"
     FILES_MATCHING
@@ -283,6 +284,11 @@ if (INSTALL_DEV)
   )
   install(
     DIRECTORY "3rdparty/dlpack/include/." DESTINATION "include"
+    FILES_MATCHING
+    PATTERN "*.h"
+    )
+  install(
+    DIRECTORY "3rdparty/dmlc-core/include/." DESTINATION "include"
     FILES_MATCHING
     PATTERN "*.h"
     )
