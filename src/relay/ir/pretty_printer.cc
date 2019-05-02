@@ -388,11 +388,11 @@ class PrettyPrinter :
 
   // Should only be triggered when op is a free variable being visited for the
   // first time.
-  Doc VisitExpr_(const VarNode* op) final {
+  Doc VisitExpr_(const VarNode* op) {
     return AllocVar(GetRef<Var>(op));
   }
 
-  Doc VisitExpr_(const ConstantNode* op) final {
+  Doc VisitExpr_(const ConstantNode* op) {
     // Print out simple scalars directly.
     if (op->is_scalar()) {
       std::ostringstream os;
@@ -415,7 +415,7 @@ class PrettyPrinter :
     return doc << Print(GetRef<NodeRef>(op), true);
   }
 
-  Doc VisitExpr_(const TupleNode* op) final {
+  Doc VisitExpr_(const TupleNode* op) {
     std::vector<Doc> fields;
     for (Expr field : op->fields) {
       fields.push_back(Print(field));
@@ -429,12 +429,12 @@ class PrettyPrinter :
     return doc << ")";
   }
 
-  Doc VisitExpr_(const TupleGetItemNode* op) final {
+  Doc VisitExpr_(const TupleGetItemNode* op) {
     Doc doc;
     return doc << Print(op->tuple) << "." << op->index;
   }
 
-  Doc VisitExpr_(const IfNode* op) final {
+  Doc VisitExpr_(const IfNode* op) {
     Doc doc;
     doc << "if (" << Print(op->cond) << ") ";
     doc << PrintBody(op->true_branch);
@@ -443,7 +443,7 @@ class PrettyPrinter :
     return doc;
   }
 
-  Doc VisitExpr_(const LetNode* op) final {
+  Doc VisitExpr_(const LetNode* op) {
     Doc doc;
     doc << "let " << AllocVar(op->var) << " = " << Print(op->value, false, true) << "\n";
     // we use a scope here so GNF hoisting doesn't escape too far
@@ -495,19 +495,19 @@ class PrettyPrinter :
     return doc;
   }
 
-  Doc VisitExpr_(const FunctionNode* op) final {
+  Doc VisitExpr_(const FunctionNode* op) {
     return PrintFunc(Doc("fn "), GetRef<Function>(op));
   }
 
-  Doc VisitExpr_(const GlobalVarNode* op) final {
+  Doc VisitExpr_(const GlobalVarNode* op) {
     return Doc('@' + op->name_hint);
   }
 
-  Doc VisitExpr_(const OpNode* op) final {
+  Doc VisitExpr_(const OpNode* op) {
     return Doc(op->name);
   }
 
-  Doc VisitExpr_(const CallNode* op) final {
+  Doc VisitExpr_(const CallNode* op) {
     Doc doc;
     // visit args first so they are lifted before the op
     // this places op closer to its call site
@@ -519,22 +519,22 @@ class PrettyPrinter :
     return doc << "(" << PrintVec(args) << PrintAttrs(op->attrs, op->op) << ")";
   }
 
-  Doc VisitExpr_(const RefCreateNode* op) final {
+  Doc VisitExpr_(const RefCreateNode* op) {
     Doc doc;
     return doc << "ref(" << Print(op->value) << ")";
   }
 
-  Doc VisitExpr_(const RefReadNode* op) final {
+  Doc VisitExpr_(const RefReadNode* op) {
     Doc doc;
     return doc << Print(op->ref) << "^";
   }
 
-  Doc VisitExpr_(const RefWriteNode* op) final {
+  Doc VisitExpr_(const RefWriteNode* op) {
     Doc doc;
     return doc << "(" << Print(op->ref) << " := " << Print(op->value) << ")";
   }
 
-  Doc VisitExpr_(const MatchNode* op) final {
+  Doc VisitExpr_(const MatchNode* op) {
     // TODO(jmp): Lots of code duplication here because PrintBody and PrintScope don't accept Docs.
     Doc doc;
     Doc body;
@@ -551,7 +551,7 @@ class PrettyPrinter :
     return doc;
   }
 
-  Doc VisitPattern_(const PatternConstructorNode* p) final {
+  Doc VisitPattern_(const PatternConstructorNode* p) {
     Doc doc;
     doc << p->constructor->name_hint << "(";
     std::vector<Doc> pats;
@@ -561,11 +561,11 @@ class PrettyPrinter :
     return doc << PrintVec(pats) << ")";
   }
 
-  Doc VisitPattern_(const PatternVarNode* pv) final {
+  Doc VisitPattern_(const PatternVarNode* pv) {
     return AllocVar(pv->var);
   }
 
-  Doc VisitExpr_(const ConstructorNode* n) final {
+  Doc VisitExpr_(const ConstructorNode* n) {
     return Doc(n->name_hint);
   }
 
@@ -585,20 +585,20 @@ class PrettyPrinter :
     return printed_type;
   }
 
-  Doc VisitTypeDefault_(const Node* node) final {
+  Doc VisitTypeDefault_(const Node* node) {
     // by default always print as meta data
     return Print(GetRef<NodeRef>(node), true);
   }
 
-  Doc VisitType_(const TypeVarNode* node) final {
+  Doc VisitType_(const TypeVarNode* node) {
     return AllocTypeVar(GetRef<TypeVar>(node));
   }
 
-  Doc VisitType_(const GlobalTypeVarNode* node) final {
+  Doc VisitType_(const GlobalTypeVarNode* node) {
     return Doc(node->var->name_hint);
   }
 
-  Doc VisitType_(const TypeCallNode* node) final {
+  Doc VisitType_(const TypeCallNode* node) {
     Doc doc = PrintType(node->func, false);
     std::vector<Doc> args;
     for (const Type& t : node->args) {
@@ -610,7 +610,7 @@ class PrettyPrinter :
     return doc;
   }
 
-  Doc VisitType_(const TensorTypeNode* node) final {
+  Doc VisitType_(const TensorTypeNode* node) {
     // scalar type
     if (node->shape.size() == 0) {
       return PrintDType(node->dtype);
@@ -629,7 +629,7 @@ class PrettyPrinter :
     return doc << "), " << PrintDType(node->dtype) << "]";
   }
 
-  Doc VisitType_(const TupleTypeNode* node) final {
+  Doc VisitType_(const TupleTypeNode* node) {
     std::vector<Doc> fields;
     for (Type field : node->fields) {
       fields.push_back(Print(field));
@@ -643,7 +643,7 @@ class PrettyPrinter :
     return doc << ")";
   }
 
-  Doc VisitType_(const FuncTypeNode* node) final {
+  Doc VisitType_(const FuncTypeNode* node) {
     Doc doc;
     std::vector<Doc> arg_types;
     for (Type arg_type : node->arg_types) {
@@ -652,7 +652,7 @@ class PrettyPrinter :
     return doc << "fn (" << PrintVec(arg_types) << ") -> " << Print(node->ret_type);
   }
 
-  Doc VisitType_(const RefTypeNode* node) final {
+  Doc VisitType_(const RefTypeNode* node) {
     Doc doc;
     return doc << "ref(" << Print(node->value) << ")";
   }
@@ -675,11 +675,11 @@ class PrettyPrinter :
     }
   }
 
-  Doc VisitAttrDefault_(const Node* op) final {
+  Doc VisitAttrDefault_(const Node* op) {
     return PrintAttr(GetRef<NodeRef>(op), true);
   }
 
-  Doc VisitAttr_(const ArrayNode* op) final {
+  Doc VisitAttr_(const ArrayNode* op) {
     Doc doc;
     doc << "[";
     std::vector<Doc> arr_vals;
@@ -691,19 +691,19 @@ class PrettyPrinter :
     return doc;
   }
 
-  Doc VisitAttr_(const ir::IntImm* op) final {
+  Doc VisitAttr_(const ir::IntImm* op) {
     return PrintConstScalar(op->type, &(op->value));
   }
 
-  Doc VisitAttr_(const ir::UIntImm* op) final {
+  Doc VisitAttr_(const ir::UIntImm* op) {
     return PrintConstScalar(op->type, &(op->value));
   }
 
-  Doc VisitAttr_(const ir::FloatImm* op) final {
+  Doc VisitAttr_(const ir::FloatImm* op) {
     return PrintConstScalar(op->type, &(op->value));
   }
 
-  Doc VisitAttr_(const ir::StringImm* op) final {
+  Doc VisitAttr_(const ir::StringImm* op) {
     return PrintString(op->value);
   }
 
@@ -745,37 +745,37 @@ class PrettyPrinter::AttrPrinter : public AttrVisitor {
     return doc << ", " << key << "=" << value;
   }
 
-  void Visit(const char* key, double* value) final {
+  void Visit(const char* key, double* value) {
     doc_ << PrintKV(key, value[0]);
   }
-  void Visit(const char* key, int64_t* value) final {
+  void Visit(const char* key, int64_t* value) {
     doc_ << PrintKV(key, value[0]);
   }
-  void Visit(const char* key, uint64_t* value) final {
+  void Visit(const char* key, uint64_t* value) {
     doc_ << PrintKV(key, value[0]);
   }
-  void Visit(const char* key, int* value) final {
+  void Visit(const char* key, int* value) {
     doc_ << PrintKV(key, value[0]);
   }
-  void Visit(const char* key, bool* value) final {
+  void Visit(const char* key, bool* value) {
     doc_ << PrintKV(key, PrintBool(value[0]));
   }
-  void Visit(const char* key, std::string* value) final {
+  void Visit(const char* key, std::string* value) {
     doc_ << PrintKV(key, PrintString(value[0]));
   }
-  void Visit(const char* key, void** value) final {
+  void Visit(const char* key, void** value) {
     LOG(FATAL) << "do not allow void as argument";
   }
-  void Visit(const char* key, DataType* value) final {
+  void Visit(const char* key, DataType* value) {
     doc_ << PrintKV(key, PrintString(runtime::TVMType2String(Type2TVMType(value[0]))));
   }
-  void Visit(const char* key, NodeRef* value) final {
+  void Visit(const char* key, NodeRef* value) {
     doc_ << PrintKV(key, parent_->PrintAttr(value[0]));
   }
-  void Visit(const char* key, runtime::NDArray* value) final {
+  void Visit(const char* key, runtime::NDArray* value) {
     LOG(FATAL) << "do not allow NDarray as argument";
   }
-  void Visit(const char* key, runtime::Object* obj) final {
+  void Visit(const char* key, runtime::Object* obj) {
     LOG(FATAL) << "do not allow Object as argument";
   }
 

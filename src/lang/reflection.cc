@@ -66,19 +66,19 @@ class NodeIndexer : public AttrVisitor {
   std::unordered_map<ObjectCell*, size_t> vm_obj_index;
   std::vector<ObjectCell*> vm_obj_list;
 
-  void Visit(const char* key, double* value) final {}
-  void Visit(const char* key, int64_t* value) final {}
-  void Visit(const char* key, uint64_t* value) final {}
-  void Visit(const char* key, int* value) final {}
-  void Visit(const char* key, bool* value) final {}
-  void Visit(const char* key, std::string* value) final {}
-  void Visit(const char* key, void** value) final {}
-  void Visit(const char* key, Type* value) final {}
-  void Visit(const char* key, NodeRef* value) final {
+  void Visit(const char* key, double* value) {}
+  void Visit(const char* key, int64_t* value) {}
+  void Visit(const char* key, uint64_t* value) {}
+  void Visit(const char* key, int* value) {}
+  void Visit(const char* key, bool* value) {}
+  void Visit(const char* key, std::string* value) {}
+  void Visit(const char* key, void** value) {}
+  void Visit(const char* key, Type* value) {}
+  void Visit(const char* key, NodeRef* value) {
     MakeIndex(value->node_.get());
   }
 
-  void Visit(const char* key, runtime::NDArray* value) final {
+  void Visit(const char* key, runtime::NDArray* value) {
     DLTensor* ptr = const_cast<DLTensor*>((*value).operator->());
     if (tensor_index.count(ptr)) return;
     CHECK_EQ(tensor_index.size(), tensor_list.size());
@@ -86,7 +86,7 @@ class NodeIndexer : public AttrVisitor {
     tensor_list.push_back(ptr);
   }
 
-  void Visit(const char* key, Object* value) final {
+  void Visit(const char* key, Object* value) {
     ObjectCell* ptr = value->ptr_.get();
     if (vm_obj_index.count(ptr)) return;
     CHECK_EQ(vm_obj_index.size(), vm_obj_list.size());
@@ -180,39 +180,39 @@ class JSONAttrGetter : public AttrVisitor {
   const std::unordered_map<ObjectCell*, size_t>* vm_obj_index_;
   JSONNode* node_;
 
-  void Visit(const char* key, double* value) final {
+  void Visit(const char* key, double* value) {
     node_->attrs[key] = std::to_string(*value);
   }
-  void Visit(const char* key, int64_t* value) final {
+  void Visit(const char* key, int64_t* value) {
     node_->attrs[key] = std::to_string(*value);
   }
-  void Visit(const char* key, uint64_t* value) final {
+  void Visit(const char* key, uint64_t* value) {
     node_->attrs[key] = std::to_string(*value);
   }
-  void Visit(const char* key, int* value) final {
+  void Visit(const char* key, int* value) {
     node_->attrs[key] = std::to_string(*value);
   }
-  void Visit(const char* key, bool* value) final {
+  void Visit(const char* key, bool* value) {
     node_->attrs[key] = std::to_string(*value);
   }
-  void Visit(const char* key, std::string* value) final {
+  void Visit(const char* key, std::string* value) {
     node_->attrs[key] = *value;
   }
-  void Visit(const char* key, void** value) final {
+  void Visit(const char* key, void** value) {
     LOG(FATAL) << "not allowed to serialize a pointer";
   }
-  void Visit(const char* key, Type* value) final {
+  void Visit(const char* key, Type* value) {
     node_->attrs[key] = Type2String(*value);
   }
-  void Visit(const char* key, NodeRef* value) final {
+  void Visit(const char* key, NodeRef* value) {
     node_->attrs[key] = std::to_string(
         node_index_->at(value->node_.get()));
   }
-  void Visit(const char* key, runtime::NDArray* value) final {
+  void Visit(const char* key, runtime::NDArray* value) {
     node_->attrs[key] = std::to_string(
         tensor_index_->at(const_cast<DLTensor*>((*value).operator->())));
   }
-  void Visit(const char* key, Object* value) final {
+  void Visit(const char* key, Object* value) {
     node_->attrs[key] = std::to_string(
         vm_obj_index_->at(value->ptr_.get()));
   }
@@ -288,44 +288,44 @@ class JSONAttrSetter : public AttrVisitor {
       LOG(FATAL) << "Wrong value format for field " << key;
     }
   }
-  void Visit(const char* key, double* value) final {
+  void Visit(const char* key, double* value) {
     ParseValue(key, value);
   }
-  void Visit(const char* key, int64_t* value) final {
+  void Visit(const char* key, int64_t* value) {
     ParseValue(key, value);
   }
-  void Visit(const char* key, uint64_t* value) final {
+  void Visit(const char* key, uint64_t* value) {
     ParseValue(key, value);
   }
-  void Visit(const char* key, int* value) final {
+  void Visit(const char* key, int* value) {
     ParseValue(key, value);
   }
-  void Visit(const char* key, bool* value) final {
+  void Visit(const char* key, bool* value) {
     ParseValue(key, value);
   }
-  void Visit(const char* key, std::string* value) final {
+  void Visit(const char* key, std::string* value) {
     *value = GetValue(key);
   }
-  void Visit(const char* key, void** value) final {
+  void Visit(const char* key, void** value) {
     LOG(FATAL) << "not allowed to deserialize a pointer";
   }
-  void Visit(const char* key, Type* value) final {
+  void Visit(const char* key, Type* value) {
     std::string stype = GetValue(key);
     *value = String2Type(stype);
   }
-  void Visit(const char* key, NodeRef* value) final {
+  void Visit(const char* key, NodeRef* value) {
     size_t index;
     ParseValue(key, &index);
     CHECK_LE(index, node_list_->size());
     value->node_ = node_list_->at(index);
   }
-  void Visit(const char* key, runtime::NDArray* value) final {
+  void Visit(const char* key, runtime::NDArray* value) {
     size_t index;
     ParseValue(key, &index);
     CHECK_LE(index, tensor_list_->size());
     *value = tensor_list_->at(index);
   }
-  void Visit(const char* key, Object* value) final {
+  void Visit(const char* key, Object* value) {
     size_t index;
     ParseValue(key, &index);
     CHECK_LE(index, vm_obj_list_->size());
@@ -478,37 +478,37 @@ class NodeAttrSetter : public AttrVisitor {
   std::string type_key;
   std::unordered_map<std::string, runtime::TVMArgValue> attrs;
 
-  void Visit(const char* key, double* value) final {
+  void Visit(const char* key, double* value) {
     *value = GetAttr(key).operator double();
   }
-  void Visit(const char* key, int64_t* value) final {
+  void Visit(const char* key, int64_t* value) {
     *value = GetAttr(key).operator int64_t();
   }
-  void Visit(const char* key, uint64_t* value) final {
+  void Visit(const char* key, uint64_t* value) {
     *value = GetAttr(key).operator uint64_t();
   }
-  void Visit(const char* key, int* value) final {
+  void Visit(const char* key, int* value) {
     *value = GetAttr(key).operator int();
   }
-  void Visit(const char* key, bool* value) final {
+  void Visit(const char* key, bool* value) {
     *value = GetAttr(key).operator bool();
   }
-  void Visit(const char* key, std::string* value) final {
+  void Visit(const char* key, std::string* value) {
     *value = GetAttr(key).operator std::string();
   }
-  void Visit(const char* key, void** value) final {
+  void Visit(const char* key, void** value) {
     *value = GetAttr(key).operator void*();
   }
-  void Visit(const char* key, Type* value) final {
+  void Visit(const char* key, Type* value) {
     *value = GetAttr(key).operator Type();
   }
-  void Visit(const char* key, NodeRef* value) final {
+  void Visit(const char* key, NodeRef* value) {
     *value = GetAttr(key).operator NodeRef();
   }
-  void Visit(const char* key, runtime::NDArray* value) final {
+  void Visit(const char* key, runtime::NDArray* value) {
     *value = GetAttr(key).operator runtime::NDArray();
   }
-  void Visit(const char* key, Object* value) final {
+  void Visit(const char* key, Object* value) {
     *value = GetAttr(key).operator Object();
   }
 

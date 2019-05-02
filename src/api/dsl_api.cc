@@ -54,45 +54,45 @@ struct APIAttrGetter : public AttrVisitor {
   TVMRetValue* ret;
   bool found_ref_object{false};
 
-  void Visit(const char* key, double* value) final {
+  void Visit(const char* key, double* value) {
     if (skey == key) *ret = value[0];
   }
-  void Visit(const char* key, int64_t* value) final {
+  void Visit(const char* key, int64_t* value) {
     if (skey == key) *ret = value[0];
   }
-  void Visit(const char* key, uint64_t* value) final {
+  void Visit(const char* key, uint64_t* value) {
     CHECK_LE(value[0], static_cast<uint64_t>(std::numeric_limits<int64_t>::max()))
         << "cannot return too big constant";
     if (skey == key) *ret = static_cast<int64_t>(value[0]);
   }
-  void Visit(const char* key, int* value) final {
+  void Visit(const char* key, int* value) {
     if (skey == key) *ret = static_cast<int64_t>(value[0]);
   }
-  void Visit(const char* key, bool* value) final {
+  void Visit(const char* key, bool* value) {
     if (skey == key) *ret = static_cast<int64_t>(value[0]);
   }
-  void Visit(const char* key, void** value) final {
+  void Visit(const char* key, void** value) {
     if (skey == key) *ret = static_cast<void*>(value[0]);
   }
-  void Visit(const char* key, Type* value) final {
+  void Visit(const char* key, Type* value) {
     if (skey == key) *ret = value[0];
   }
-  void Visit(const char* key, std::string* value) final {
+  void Visit(const char* key, std::string* value) {
     if (skey == key) *ret = value[0];
   }
-  void Visit(const char* key, NodeRef* value) final {
+  void Visit(const char* key, NodeRef* value) {
     if (skey == key) {
       *ret = value[0];
       found_ref_object = true;
     }
   }
-  void Visit(const char* key, runtime::NDArray* value) final {
+  void Visit(const char* key, runtime::NDArray* value) {
     if (skey == key) {
       *ret = value[0];
       found_ref_object = true;
     }
   }
-  void Visit(const char* key, runtime::Object* value) final {
+  void Visit(const char* key, runtime::Object* value) {
     if (skey == key) {
       *ret = value[0];
       found_ref_object = true;
@@ -103,52 +103,52 @@ struct APIAttrGetter : public AttrVisitor {
 struct APIAttrDir : public AttrVisitor {
   std::vector<std::string>* names;
 
-  void Visit(const char* key, double* value) final {
+  void Visit(const char* key, double* value) {
     names->push_back(key);
   }
-  void Visit(const char* key, int64_t* value) final {
+  void Visit(const char* key, int64_t* value) {
     names->push_back(key);
   }
-  void Visit(const char* key, uint64_t* value) final {
+  void Visit(const char* key, uint64_t* value) {
     names->push_back(key);
   }
-  void Visit(const char* key, bool* value) final {
+  void Visit(const char* key, bool* value) {
     names->push_back(key);
   }
-  void Visit(const char* key, int* value) final {
+  void Visit(const char* key, int* value) {
     names->push_back(key);
   }
-  void Visit(const char* key, void** value) final {
+  void Visit(const char* key, void** value) {
     names->push_back(key);
   }
-  void Visit(const char* key, Type* value) final {
+  void Visit(const char* key, Type* value) {
     names->push_back(key);
   }
-  void Visit(const char* key, std::string* value) final {
+  void Visit(const char* key, std::string* value) {
     names->push_back(key);
   }
-  void Visit(const char* key, NodeRef* value) final {
+  void Visit(const char* key, NodeRef* value) {
     names->push_back(key);
   }
-  void Visit(const char* key, runtime::NDArray* value) final {
+  void Visit(const char* key, runtime::NDArray* value) {
     names->push_back(key);
   }
-  void Visit(const char* key, runtime::Object* value) final {
+  void Visit(const char* key, runtime::Object* value) {
     names->push_back(key);
   }
 };
 
 class DSLAPIImpl : public DSLAPI {
  public:
-  void NodeFree(NodeHandle handle) const final {
+  void NodeFree(NodeHandle handle) const {
     delete static_cast<TVMAPINode*>(handle);
   }
   void NodeTypeKey2Index(const char* type_key,
-                        int* out_index) const final {
+                        int* out_index) const {
     *out_index = static_cast<int>(Node::TypeKey2Index(type_key));
   }
   void NodeGetTypeIndex(NodeHandle handle,
-                        int* out_index) const final {
+                        int* out_index) const {
     *out_index = static_cast<int>(
         (*static_cast<TVMAPINode*>(handle))->type_index());
   }
@@ -156,7 +156,7 @@ class DSLAPIImpl : public DSLAPI {
                    const char* key,
                    TVMValue* ret_val,
                    int* ret_type_code,
-                   int* ret_success) const final {
+                   int* ret_success) const {
     TVMRetValue rv;
     APIAttrGetter getter;
     TVMAPINode* tnode = static_cast<TVMAPINode*>(handle);
@@ -195,7 +195,7 @@ class DSLAPIImpl : public DSLAPI {
   }
   void NodeListAttrNames(NodeHandle handle,
                         int *out_size,
-                        const char*** out_array) const final {
+                        const char*** out_array) const {
     TVMAPIThreadLocalEntry *ret = TVMAPIThreadLocalStore::Get();
     ret->ret_vec_str.clear();
     TVMAPINode* tnode = static_cast<TVMAPINode*>(handle);
