@@ -174,7 +174,7 @@ class Op : public relay::Expr {
 };
 
 /*! \brief Helper structure to register operators */
-class OpRegistry {
+class TVM_DLL OpRegistry {
  public:
   /*! \return the operator */
   const Op& op() const { return op_; }
