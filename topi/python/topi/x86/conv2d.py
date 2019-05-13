@@ -27,8 +27,9 @@ from tvm.autotvm.task import get_config
 from .. import generic, tag
 from .. import nn
 from ..util import get_const_tuple, get_shape
-from ..nn.conv2d import conv2d, conv2d_NCHWc, \
-    conv2d_alter_layout, conv2d_infer_layout, _get_workload as _get_conv2d_workload
+from ..nn.conv2d import conv2d, conv2d_NCHWc, group_conv2d_nchw, \
+    group_conv2d_nchw_impl, conv2d_alter_layout, conv2d_infer_layout, \
+    _get_workload as _get_conv2d_workload
 from ..nn.depthwise_conv2d import _get_workload as _get_depthwise_conv2d_workload
 from ..nn.depthwise_conv2d import depthwise_conv2d_NCHWc, depthwise_conv2d_nchw
 from ..nn.pad import pad
@@ -97,7 +98,20 @@ def _create_tuning_space(cfg, data, kernel, strides, padding, dilation, layout):
         cfg.define_knob("unroll_kw", [True, False])
 
 
-@autotvm.register_topi_compute(conv2d, 'cpu', ['direct'])
+@autotvm.register_topi_compute(group_conv2d_nchw, 'cpu', 'direct')
+def _declaration_group_conv2d_nchw(cfg, data, kernel, strides, padding, dilation, groups, out_dtype):
+    out_dtype = data.dtype if out_dtype is None else out_dtype
+    padding = padding if isinstance(padding, (tuple, list)) else (padding, padding)
+    strides = strides if isinstance(strides, (tuple, list)) else (strides, strides)
+    dilation = dilation if isinstance(dilation, (tuple, list)) else (dilation, dilation)
+    layout = "NCHW"
+    _create_tuning_space(cfg, data, kernel, strides, padding, dilation, layout)
+    if cfg.is_fallback:
+        _get_default_config(cfg, data, kernel, strides, padding, out_dtype)
+    return nn.group_conv2d_nchw_impl(data, kernel, strides, padding, dilation, groups, out_dtype)
+
+
+@autotvm.register_topi_compute(conv2d, 'cpu', 'direct')
 def _declaration_conv(cfg, data, kernel, strides, padding, dilation, layout, out_dtype):
     out_dtype = data.dtype if out_dtype is None else out_dtype
     padding = padding if isinstance(padding, (tuple, list)) else (padding, padding)

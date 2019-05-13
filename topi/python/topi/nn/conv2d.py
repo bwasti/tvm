@@ -594,6 +594,11 @@ def group_conv2d_nchw(Input, Filter, stride, padding, dilation, groups, out_dtyp
     Output : tvm.Tensor
         4-D with shape [batch, out_channel, out_height, out_width]
     """
+    # raise ValueError("missing register for topi.nn.group_conv2d_nchw")
+    return group_conv2d_nchw_impl(Input, Filter, stride, padding, dilation, groups, out_dtype)
+
+
+def group_conv2d_nchw_impl(Input, Filter, stride, padding, dilation, groups, out_dtype=None):
     if out_dtype is None:
         out_dtype = Input.dtype
     assert isinstance(stride, int) or len(stride) == 2
