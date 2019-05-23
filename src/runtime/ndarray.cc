@@ -190,8 +190,10 @@ void NDArray::CopyFromTo(DLTensor* from,
 using namespace tvm::runtime;
 
 void NDArrayDLPackDeleter(DLManagedTensor* tensor) {
-  static_cast<NDArray::Container*>(tensor->manager_ctx)->DecRef();
-  delete tensor;
+  if (tensor) {
+    static_cast<NDArray::Container*>(tensor->manager_ctx)->DecRef();
+    delete tensor;
+  }
 }
 
 int TVMArrayAlloc(const tvm_index_t* shape,
