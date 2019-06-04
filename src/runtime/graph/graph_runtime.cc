@@ -97,6 +97,33 @@ void GraphRuntime::SetInput(int index, DLTensor* data_in) {
   data_entry_[eid].CopyFrom(data_in);
 }
 /*!
+ * \brief set index-th input to the graph without copying the data.
+ * \param index The input index.
+ * \param data_ref The input data that is referred.
+ */
+void GraphRuntime::SetInputZeroCopy(int index, DLTensor* data_ref) {
+  CHECK_LT(static_cast<size_t>(index), input_nodes_.size());
+  uint32_t eid = this->entry_id(input_nodes_[index], 0);
+  for (auto& op_arg: op_args_) {
+    if(op_arg) {
+      const auto it = op_arg->input_entry_ids.find(eid);
+      if (it != op_arg->input_entry_ids.end()) {
+        for (const auto i: it->second) {
+          op_arg->args[i] = *data_ref;
+          TVMValue v;
+          DLTensor* t = &(op_arg->args[i]);
+          v.v_handle = t;
+          op_arg->arg_values[i] = v;
+          if (op_arg->flatten_data) {
+            t->ndim = 1;
+            t->shape = &(op_arg->shape_data[i]);
+          }
+        }
+      }
+    }
+  }
+}
+/*!
  * \brief Get the number of outputs
  *
  * \return The number of outputs from graph.
@@ -252,38 +279,46 @@ void GraphRuntime::SetupStorage() {
 
 void GraphRuntime::SetupOpExecs() {
   op_execs_.resize(this->GetNumOfNodes());
+  op_args_.resize(this->GetNumOfNodes());
   // setup the array and requirements.
   for (uint32_t nid = 0; nid < this->GetNumOfNodes(); ++nid) {
     const auto& inode = nodes_[nid];
     if (inode.op_type == "null") continue;
     std::vector<DLTensor> args;
+    std::vector<uint32_t> input_entry_ids;
     for (const auto& e : inode.inputs) {
-      args.push_back(*(data_entry_[this->entry_id(e)].operator->()));
+      uint32_t eid = this->entry_id(e);
+      args.push_back(*(data_entry_[eid].operator->()));
+      input_entry_ids.push_back(eid);
     }
     for (uint32_t index = 0; index < inode.param.num_outputs; ++index) {
       uint32_t eid = this->entry_id(nid, index);
       args.push_back(*(data_entry_[eid].operator->()));
     }
     CHECK(inode.op_type == "tvm_op") << "Can only take tvm_op as op";
-
-    op_execs_[nid] = CreateTVMOp(inode.param, args, inode.inputs.size());
+    std::tie(op_execs_[nid], op_args_[nid]) = CreateTVMOp(inode.param, args, inode.inputs.size());
+    auto& entry_to_input_pos = op_args_[nid]->input_entry_ids;
+    for (uint32_t i = 0; i < input_entry_ids.size(); ++i) {
+      const auto eid = input_entry_ids[i];
+      auto it = entry_to_input_pos.find(eid);
+      if (it == entry_to_input_pos.end()) {
+        entry_to_input_pos.emplace(eid, std::vector<uint32_t>{i});
+      } else {
+        it->second.push_back(i);
+      }
+    }
   }
 }
 
-std::function<void()> GraphRuntime::CreateTVMOp(
+std::pair<std::function<void()>, std::shared_ptr<OpArgs> > GraphRuntime::CreateTVMOp(
     const TVMOpParam& param,
     const std::vector<DLTensor>& args,
     size_t num_inputs) {
-  struct OpArgs {
-    std::vector<DLTensor> args;
-    std::vector<TVMValue> arg_values;
-    std::vector<int> arg_tcodes;
-    std::vector<int64_t> shape_data;
-  };
   std::shared_ptr<OpArgs> arg_ptr = std::make_shared<OpArgs>();
   // setup address.
   arg_ptr->args = std::move(args);
   if (param.flatten_data) {
+    arg_ptr->flatten_data = true;
     arg_ptr->shape_data.resize(arg_ptr->args.size());
   }
   for (size_t i = 0; i < arg_ptr->args.size(); ++i) {
@@ -301,7 +336,7 @@ std::function<void()> GraphRuntime::CreateTVMOp(
   }
 
   if (param.func_name == "__nop") {
-    return [](){};
+    return {[](){}, arg_ptr};
   } else if (param.func_name == "__copy") {
     // Perform cross device data copy.
     // Directly copy data from the input to the output.
@@ -310,7 +345,7 @@ std::function<void()> GraphRuntime::CreateTVMOp(
       DLTensor* to = static_cast<DLTensor*>(arg_ptr->arg_values[1].v_handle);
       TVM_CCALL(TVMArrayCopyFromTo(from, to, nullptr));
     };
-    return fexec;
+    return {fexec, arg_ptr};
   }
 
   // Get compiled function from the module that contains both host and device
@@ -325,7 +360,7 @@ std::function<void()> GraphRuntime::CreateTVMOp(
                   static_cast<int>(arg_ptr->arg_values.size()));
     pf.CallPacked(targs, &rv);
   };
-  return fexec;
+  return {fexec, arg_ptr};
 }
 
 PackedFunc GraphRuntime::GetFunction(
@@ -341,6 +376,15 @@ PackedFunc GraphRuntime::GetFunction(
           this->SetInput(args[0], args[1]);
         }
       });
+  } else if (name == "set_input_zero_copy") {
+    return PackedFunc([sptr_to_self, this](TVMArgs args, TVMRetValue* rv) {
+      if (args[0].type_code() == kStr) {
+        int in_idx = this->GetInputIndex(args[0]);
+        if (in_idx >= 0) this->SetInputZeroCopy(in_idx, args[1]);
+      } else {
+        this->SetInputZeroCopy(args[0], args[1]);
+      }
+    });
   } else if (name == "get_output") {
     return PackedFunc([sptr_to_self, this](TVMArgs args, TVMRetValue* rv) {
         if (args.num_args == 2) {
