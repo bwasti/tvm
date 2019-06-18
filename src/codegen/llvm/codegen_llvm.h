@@ -293,6 +293,16 @@ class CodeGenLLVM :
   std::unordered_set<const Variable*> alias_var_set_;
   // set of volatile buffer.
   std::unordered_set<const Variable*> volatile_buf_;
+
+  struct DebugInfo {
+    std::unique_ptr<llvm::DIBuilder> di_builder_;
+    llvm::DICompileUnit* compilation_unit_{nullptr};
+    llvm::DIFile* file_{nullptr};
+  };
+  static std::unique_ptr<DebugInfo> CreateDebugInfo(llvm::Module* module);
+  llvm::DIType* getDebugType(llvm::Type* ty);
+  void AddDebugInformation(llvm::Function* function);
+  std::unique_ptr<DebugInfo> dbg_info_;
 };
 }  // namespace codegen
 }  // namespace tvm

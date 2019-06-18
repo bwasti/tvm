@@ -195,6 +195,10 @@ class LLVMModuleNode final : public runtime::ModuleNode {
     module_->addModuleFlag(
         llvm::Module::Warning, "tvm_target",
         llvm::MDString::get(*ctx_, target));
+
+    module_->addModuleFlag(llvm::Module::Override, "Debug Info Version",
+                            llvm::DEBUG_METADATA_VERSION);
+    module_->addModuleFlag(llvm::Module::Override, "Dwarf Version", 2);
     target_ = target;
     mptr_ = module_.get();
   }

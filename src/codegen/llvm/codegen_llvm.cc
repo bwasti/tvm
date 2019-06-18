@@ -73,6 +73,7 @@ void CodeGenLLVM::Init(const std::string& module_name,
   md_tbaa_root_ = md_builder_->createTBAARoot("tvm-tbaa");
   md_tbaa_alias_set_ = md_builder_->createTBAANode("tvm-alias", md_tbaa_root_);
   this->InitTarget(tm);
+  dbg_info_ = CreateDebugInfo(module_.get());
 }
 
 void CodeGenLLVM::InitTarget(llvm::TargetMachine* tm) {
@@ -107,6 +108,27 @@ void CodeGenLLVM::InitFuncState() {
   alloc_storage_info_.clear();
   volatile_buf_.clear();
   analyzer_.reset(new arith::Analyzer());
+}
+
+llvm::DIType* CodeGenLLVM::getDebugType(llvm::Type* ty) {
+  if (ty == builder_->getVoidTy()) {
+    return nullptr;
+  } else if (ty == builder_->getFloatTy()) {
+    return dbg_info_->di_builder_->createBasicType("float", 32, llvm::dwarf::DW_ATE_float);
+  } else if (ty == builder_->getInt8Ty()) {
+    return dbg_info_->di_builder_->createBasicType("int8", 8, llvm::dwarf::DW_ATE_signed);
+  } else if (ty == builder_->getInt32Ty()) {
+    return dbg_info_->di_builder_->createBasicType("int32", 32, llvm::dwarf::DW_ATE_signed);
+  } else if (ty->isPointerTy()) {
+    return dbg_info_->di_builder_->createPointerType(getDebugType(ty->getPointerElementType()),
+                                                     ty->getPrimitiveSizeInBits());
+  } else {
+    std::string type_str;
+    llvm::raw_string_ostream rso(type_str);
+    ty->print(rso);
+    LOG(FATAL) << "Unknown LLVM type:" << rso.str();
+  }
+  return nullptr;
 }
 
 void CodeGenLLVM::AddFunctionInternal(const LoweredFunc& f, bool ret_void) {
@@ -164,11 +186,75 @@ void CodeGenLLVM::AddFunctionInternal(const LoweredFunc& f, bool ret_void) {
   } else {
     builder_->CreateRet(ConstInt32(0));
   }
+  AddDebugInformation(function_);
+}
+
+// Following Glow |DebugInfo::generateFunctionDebugInfo|, https://git.io/fjadv
+void CodeGenLLVM::AddDebugInformation(llvm::Function* function) {
+  CHECK(!function->getSubprogram());
+  llvm::SmallVector<llvm::Metadata*, 4> paramTys;
+  llvm::DIType* returnTy = getDebugType(function->getReturnType());
+  paramTys.push_back(returnTy);
+  for (auto i = 0; i < function->arg_size(); ++i) {
+    paramTys.push_back(getDebugType(function->getFunctionType()->getParamType(i)));
+  }
+  llvm::DISubroutineType* DIFunctionTy = dbg_info_->di_builder_->createSubroutineType(
+      dbg_info_->di_builder_->getOrCreateTypeArray(paramTys));
+
+  llvm::DIScope *FContext = dbg_info_->file_;
+  auto* DIFunction = dbg_info_->di_builder_->createFunction(
+      FContext,
+      function->getName(), 
+      llvm::StringRef(),
+      dbg_info_->file_,
+      0 /* line number */,
+      DIFunctionTy, 
+      0 /* scope line */,
+      llvm::DINode::FlagPrototyped, 
+      llvm::DISubprogram::toSPFlags(true, true, true)
+      );
+
+  CHECK(DIFunction);
+  function->setSubprogram(DIFunction);
+  CHECK_EQ(function->getSubprogram(), DIFunction);
+
+  IRBuilder builder(&function->getEntryBlock());
+  if (!function->getEntryBlock().empty()) {
+    builder.SetInsertPoint(&function->getEntryBlock().front());
+  }
+  llvm::DebugLoc DL;
+  builder.SetCurrentDebugLocation(DL);
+  for (auto i = 0; i < function->arg_size(); ++i) {
+    auto* paramAlloca = builder.CreateAlloca(function->getFunctionType()->getParamType(i));
+    std::string paramName = "arg" + std::to_string(i + 1);
+    auto param = dbg_info_->di_builder_->createParameterVariable(
+        DIFunction, paramName, i + 1, dbg_info_->file_, 0,
+        getDebugType(function->getFunctionType()->getParamType(i)),
+        /* alwaysPreserve */ true);
+    auto* store = builder.CreateStore(function->arg_begin() + i, paramAlloca);
+    dbg_info_->di_builder_->insertDeclare(paramAlloca, param,
+                                          dbg_info_->di_builder_->createExpression(),
+                                          llvm::DebugLoc::get(0, 0, DIFunction), store);
+  }
+  dbg_info_->di_builder_->finalizeSubprogram(function->getSubprogram());
+  auto* scope = function->getSubprogram();
+  for (auto& BB : *function) {
+    if (!scope) {
+      continue;
+    }
+    for (auto& I : BB) {
+      if (I.getDebugLoc()) {
+        continue;
+      }
+      I.setDebugLoc(llvm::DebugLoc::get(0, 0, scope));
+    }
+  }
 }
 
 std::unique_ptr<llvm::Module> CodeGenLLVM::Finish() {
   this->AddStartupFunction();
   // link modules
+  dbg_info_->di_builder_->finalize();
   for (size_t i = 0; i < link_modules_.size(); ++i) {
     CHECK(!llvm::Linker::linkModules(*module_, std::move(link_modules_[i])))
         << "Failed to link modules";
@@ -418,6 +504,19 @@ void CodeGenLLVM::GetAlignment(Type t,
   }
   *p_alignment = align_bits / 8;
 }
+
+std::unique_ptr<CodeGenLLVM::DebugInfo> CodeGenLLVM::CreateDebugInfo(llvm::Module* module) {
+  auto debug_info = llvm::make_unique<CodeGenLLVM::DebugInfo>();
+  debug_info->di_builder_ = llvm::make_unique<llvm::DIBuilder>(*module);
+  debug_info->file_ = debug_info->di_builder_->createFile("model.tvm", "/tmp/");
+  debug_info->compilation_unit_ = debug_info->di_builder_->createCompileUnit(
+      llvm::dwarf::DW_LANG_C, debug_info->file_, "TVM", 0, "", 0, "",
+      llvm::DICompileUnit::DebugEmissionKind::FullDebug,
+      /* SplitDebugInlining */ true,
+      /* DebugInfoForProfiling */ true);
+  return debug_info;
+}
+
 
 llvm::Value* CodeGenLLVM::CreateBroadcast(llvm::Value* value, int lanes) {
   llvm::Constant* undef = llvm::UndefValue::get(

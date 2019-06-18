@@ -105,6 +105,9 @@ def _linux_shared(output, objects, options, cc="g++"):
         msg += py_str(out)
         raise RuntimeError(msg)
 
+    if sys.platform == "darwin":
+        cmd = ["dsymutil", output]
+        subprocess.check_call(cmd)
 
 def _windows_shared(output, objects, options):
     cl_cmd = ["cl"]
