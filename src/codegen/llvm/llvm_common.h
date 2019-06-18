@@ -27,6 +27,7 @@
 #ifdef TVM_LLVM_VERSION
 
 #include <llvm/ExecutionEngine/MCJIT.h>
+#include <llvm/ExecutionEngine/JITEventListener.h>
 
 #include <llvm/Analysis/TargetTransformInfo.h>
 #include <llvm/Bitcode/BitcodeWriter.h>

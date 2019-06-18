@@ -30,6 +30,17 @@
 #include "codegen_llvm.h"
 #include "../../runtime/file_util.h"
 #include "../../runtime/module_util.h"
+#include "llvm/Object/ObjectFile.h"
+#include "llvm/Object/SymbolSize.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/Object/COFF.h"
+#include "llvm/Object/ELFObjectFile.h"
+#include "llvm/Object/MachO.h"
+
+#include <fstream>
+#include <iostream>
+#include <unistd.h>
+#include <iostream>
 
 namespace tvm {
 namespace codegen {
@@ -37,6 +48,122 @@ namespace codegen {
 using runtime::TVMArgs;
 using runtime::TVMRetValue;
 using runtime::PackedFunc;
+
+using namespace llvm;
+using namespace object;
+
+static unsigned getSectionID(const ObjectFile &O, SectionRef Sec) {
+   if (auto *M = dyn_cast<MachOObjectFile>(&O))
+     return M->getSectionID(Sec);
+   auto d = dyn_cast<COFFObjectFile>(&O);
+   if (!d) { return 0; }
+   return d->getSectionID(Sec);
+ }
+static unsigned getSymbolSectionID(const ObjectFile &O, SymbolRef Sym) {
+   if (auto *M = dyn_cast<MachOObjectFile>(&O))
+     return M->getSymbolSectionID(Sym);
+   auto d = dyn_cast<COFFObjectFile>(&O);
+   if (!d) { return 0; }
+   return d->getSymbolSectionID(Sym);
+ }
+
+std::vector<std::pair<SymbolRef, uint64_t>> hcomputeSymbolSizes(const ObjectFile &O) {
+   std::vector<std::pair<SymbolRef, uint64_t>> Ret;
+ 
+   // Collect sorted symbol addresses. Include dummy addresses for the end
+   // of each section.
+   std::vector<SymEntry> Addresses;
+   unsigned SymNum = 0;
+   for (symbol_iterator I = O.symbol_begin(), E = O.symbol_end(); I != E; ++I) {
+     SymbolRef Sym = *I;
+     uint64_t Value = Sym.getValue();
+     Addresses.push_back({I, Value, SymNum, getSymbolSectionID(O, Sym)});
+     ++SymNum;
+   }
+   for (SectionRef Sec : O.sections()) {
+     uint64_t Address = Sec.getAddress();
+     uint64_t Size = Sec.getSize();
+     Addresses.push_back(
+         {O.symbol_end(), Address + Size, 0, getSectionID(O, Sec)});
+   }
+ 
+   if (Addresses.empty())
+     return Ret;
+ 
+   array_pod_sort(Addresses.begin(), Addresses.end(), compareAddress);
+ 
+   // Compute the size as the gap to the next symbol
+   for (unsigned I = 0, N = Addresses.size() - 1; I < N; ++I) {
+     auto &P = Addresses[I];
+     if (P.I == O.symbol_end())
+       continue;
+ 
+     // If multiple symbol have the same address, give both the same size.
+     unsigned NextI = I + 1;
+     while (NextI < N && Addresses[NextI].Address == P.Address)
+       ++NextI;
+ 
+     uint64_t Size = Addresses[NextI].Address - P.Address;
+     P.Address = Size;
+   }
+ 
+   // Assign the sorted symbols in the original order.
+   Ret.resize(SymNum);
+   for (SymEntry &P : Addresses) {
+     if (P.I == O.symbol_end())
+       continue;
+     Ret[P.Number] = {*P.I, P.Address};
+   }
+   return Ret;
+ }
+
+struct PerfMapEntry {
+  PerfMapEntry(std::string s, uint64_t add, uint64_t size_) : symbol(s), addr(add), size(size_) {}
+  std::string symbol;
+  uint64_t addr;
+  uint64_t size;
+};
+
+class HandrolledPerfJITEventListener : public llvm::JITEventListener {
+ private:
+  std::vector<PerfMapEntry>* perf_map_;
+ public:
+  HandrolledPerfJITEventListener(std::vector<PerfMapEntry>* perf_map) : perf_map_(perf_map) { }
+  ~HandrolledPerfJITEventListener() = default;
+  void notifyObjectLoaded(llvm::JITEventListener::ObjectKey K, const llvm::object::ObjectFile &Obj,
+      const llvm::RuntimeDyld::LoadedObjectInfo &L) override {
+    for (const std::pair<llvm::object::SymbolRef, uint64_t> &P : hcomputeSymbolSizes(Obj)) {
+      llvm::object::SymbolRef Sym = P.first;
+      llvm::Expected<llvm::StringRef> Name = Sym.getName();
+      if (!Name) {
+        llvm::consumeError(Name.takeError());
+        continue;
+      }
+      llvm::Expected<uint64_t> AddrOrErr = Sym.getAddress();
+      if (!AddrOrErr) {
+        llvm::consumeError(AddrOrErr.takeError());
+        continue;
+      }
+      uint64_t Addr = AddrOrErr.get();
+      auto sec = Sym.getSection();
+      if (!sec) {
+        llvm::consumeError(sec.takeError());
+        continue;
+      }
+      if (*sec == Obj.section_end()) {
+        continue;
+      }
+      auto section = *sec.get();
+      uint64_t global_addr = Addr + L.getSectionLoadAddress(section);
+      uint64_t sec_size = section.getSize();
+      uint64_t Size = P.second;
+      perf_map_->emplace_back(Name->str(), global_addr, Size);
+    }
+  }
+
+  void notifyFreeingObject(llvm::JITEventListener::ObjectKey K) override {
+  }
+};
 
 class LLVMModuleNode final : public runtime::ModuleNode {
  public:
@@ -69,6 +196,7 @@ class LLVMModuleNode final : public runtime::ModuleNode {
 
     BackendPackedCFunc faddr =
         reinterpret_cast<BackendPackedCFunc>(GetFunctionAddr(fname));
+
     if (faddr == nullptr) return PackedFunc();
     return WrapPackedFunc(faddr, sptr_to_self);
   }
@@ -229,6 +357,21 @@ class LLVMModuleNode final : public runtime::ModuleNode {
   }
 
  private:
+  void processPerfMap(const std::vector<PerfMapEntry>& perf_map) {
+    std::stringstream ss_perf_map;
+    ss_perf_map << "/tmp/perf-" << getpid() << ".map";
+    auto perf_map_path = ss_perf_map.str();
+    auto tmp_perf_map_path = perf_map_path + ".tmp";
+    std::ofstream tmp_perf_map_file;
+    tmp_perf_map_file.open(tmp_perf_map_path, std::fstream::out | std::fstream::trunc);
+    for (const auto& entry : perf_map) {
+      if (entry.size == 0 || entry.addr == 0) continue;
+      tmp_perf_map_file << std::hex << entry.addr << " " << entry.size << " " << entry.symbol << "\n";
+    }
+    tmp_perf_map_file.close();
+    CHECK(std::rename(tmp_perf_map_path.c_str(), perf_map_path.c_str()) == 0);
+  }
+
   void LazyInitJIT() {
     std::lock_guard<std::mutex> lock(mutex_);
     if (ee_) {
@@ -264,10 +407,14 @@ class LLVMModuleNode final : public runtime::ModuleNode {
     ee_ = builder.create(tm.release());
     CHECK(ee_ != nullptr)
         << "Failed to initialize git engine for " << mptr_->getTargetTriple();
+    std::vector<PerfMapEntry> perf_map;
+    auto pel = HandrolledPerfJITEventListener(&perf_map);
+    ee_->RegisterJITEventListener(&pel);
     ee_->runStaticConstructorsDestructors(false);
     // setup context address.
     entry_func_ =
         reinterpret_cast<const char*>(GetGlobalAddr(runtime::symbol::tvm_module_main));
+    processPerfMap(perf_map);
     if (void** ctx_addr = reinterpret_cast<void**>(
             GetGlobalAddr(runtime::symbol::tvm_module_ctx))) {
       *ctx_addr = this;
